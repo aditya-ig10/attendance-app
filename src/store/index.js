@@ -8,7 +8,8 @@ export default createStore({
     user: null,
     attendance: [],
     holidays: [],
-    currentInTime: null
+    currentInTime: null,
+    allUsers: []  // New state for storing all users
   },
   mutations: {
     setUser(state, user) {
@@ -22,6 +23,9 @@ export default createStore({
     },
     setCurrentInTime(state, time) {
       state.currentInTime = time;
+    },
+    setAllUsers(state, users) {  // New mutation
+      state.allUsers = users;
     }
   },
   actions: {
@@ -68,6 +72,7 @@ export default createStore({
       await signOut(auth);
       commit('setUser', null);
       commit('setCurrentInTime', null);
+      commit('setAllUsers', []);
     },
     async recordInTime({ commit, state }) {
       try {
@@ -126,6 +131,18 @@ export default createStore({
         commit('setHolidays', holidays);
       } catch (error) {
         console.error('Error fetching holidays:', error);
+      }
+    },
+    async fetchAllUsers({ commit }) {  // New action to fetch all users
+      try {
+        const querySnapshot = await getDocs(collection(db, 'users'));
+        const users = querySnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        commit('setAllUsers', users);
+      } catch (error) {
+        console.error('Error fetching all users:', error);
       }
     }
   }
