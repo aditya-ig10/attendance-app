@@ -1,74 +1,61 @@
-// src/views/Signup.vue
+// src/views/ResetPassword.vue
 <template>
-  <div class="signup">
-    <div class="signup-card">
-      <h2>Sign Up</h2>
-      <p class="subtitle">Create your attendance tracker account</p>
+  <div class="reset-password">
+    <div class="reset-card">
+      <h2>Reset Password</h2>
+      <p class="subtitle">Enter your email to receive a password reset link</p>
       
-      <form @submit.prevent="handleSignup">
-        <div class="input-group">
-          <input v-model="name" type="text" placeholder="Full Name" required />
-        </div>
-        <div class="input-group">
-          <input v-model="department" type="text" placeholder="Department" required />
-        </div>
+      <form @submit.prevent="handleResetPassword">
         <div class="input-group">
           <input v-model="email" type="email" placeholder="Email" required />
         </div>
-        <div class="input-group">
-          <input v-model="password" type="password" placeholder="Password (min 6 characters)" required minlength="6" />
-        </div>
-        <button type="submit" class="signup-btn" :disabled="loading">
-          <span v-if="!loading">Sign Up</span>
+        <button type="submit" class="reset-btn" :disabled="loading">
+          <span v-if="!loading">Send Reset Link</span>
           <span v-else class="loading-circle"></span>
         </button>
+        <transition name="fade">
+          <p v-if="message" class="success">{{ message }}</p>
+        </transition>
         <transition name="fade">
           <p v-if="error" class="error">{{ error }}</p>
         </transition>
       </form>
 
       <div class="links">
-        <p>Already have an account? <router-link to="/login">Login</router-link></p>
+        <router-link to="/login">Back to Login</router-link>
       </div>
     </div>
   </div>
 </template>
 
 <script>
-import { useStore } from 'vuex';
-import { useRouter } from 'vue-router';
 import { ref } from 'vue';
+import { auth } from '../firebase';
+import { sendPasswordResetEmail } from 'firebase/auth';
 
 export default {
   setup() {
-    const store = useStore();
-    const router = useRouter();
-    const name = ref('');
-    const department = ref('');
     const email = ref('');
-    const password = ref('');
-    const error = ref('');
     const loading = ref(false);
+    const message = ref('');
+    const error = ref('');
 
-    const handleSignup = async () => {
+    const handleResetPassword = async () => {
       loading.value = true;
+      message.value = '';
       error.value = '';
       try {
-        await store.dispatch('signup', {
-          name: name.value,
-          department: department.value,
-          email: email.value,
-          password: password.value
-        });
-        router.push('/dashboard');
+        await sendPasswordResetEmail(auth, email.value);
+        message.value = 'Password reset email sent successfully! Check your inbox.';
+        email.value = '';
       } catch (err) {
-        error.value = err.message || 'Signup failed';
+        error.value = err.message || 'Failed to send reset email';
       } finally {
         loading.value = false;
       }
     };
 
-    return { name, department, email, password, error, loading, handleSignup };
+    return { email, loading, message, error, handleResetPassword };
   }
 };
 </script>
@@ -81,7 +68,7 @@ export default {
   box-sizing: border-box;
 }
 
-.signup {
+.reset-password {
   min-height: 100vh;
   display: flex;
   justify-content: center;
@@ -90,7 +77,7 @@ export default {
   background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
 }
 
-.signup-card {
+.reset-card {
   background: rgba(255, 255, 255, 0.9);
   padding: 2rem;
   border-radius: 15px;
@@ -126,10 +113,10 @@ input {
   font-size: 1rem;
 }
 
-.signup-btn {
+.reset-btn {
   width: 100%;
   padding: 0.75rem;
-  background: #2ecc71;
+  background: #e74c3c;
   border: none;
   border-radius: 25px;
   color: white;
@@ -139,14 +126,20 @@ input {
   position: relative;
 }
 
-.signup-btn:hover:not(:disabled) {
-  background: #27ae60;
+.reset-btn:hover:not(:disabled) {
+  background: #c0392b;
   transform: translateY(-2px);
 }
 
-.signup-btn:disabled {
+.reset-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.success {
+  color: #2ecc71;
+  margin: 1rem 0 0;
+  font-size: 0.9rem;
 }
 
 .error {
@@ -167,11 +160,6 @@ input {
 
 .links a:hover {
   text-decoration: underline;
-}
-
-.links p {
-  margin: 0;
-  color: #7f8c8d;
 }
 
 .loading-circle {
@@ -201,7 +189,7 @@ input {
 
 /* Responsive Design */
 @media (max-width: 480px) {
-  .signup-card {
+  .reset-card {
     padding: 1.5rem;
   }
 
@@ -217,7 +205,7 @@ input {
     padding: 0.6rem;
   }
 
-  .signup-btn {
+  .reset-btn {
     padding: 0.6rem;
   }
 }

@@ -9,7 +9,7 @@ export default createStore({
     attendance: [],
     holidays: [],
     currentInTime: null,
-    allUsers: []  // New state for storing all users
+    allUsers: []
   },
   mutations: {
     setUser(state, user) {
@@ -24,7 +24,7 @@ export default createStore({
     setCurrentInTime(state, time) {
       state.currentInTime = time;
     },
-    setAllUsers(state, users) {  // New mutation
+    setAllUsers(state, users) {
       state.allUsers = users;
     }
   },
@@ -133,7 +133,7 @@ export default createStore({
         console.error('Error fetching holidays:', error);
       }
     },
-    async fetchAllUsers({ commit }) {  // New action to fetch all users
+    async fetchAllUsers({ commit }) {
       try {
         const querySnapshot = await getDocs(collection(db, 'users'));
         const users = querySnapshot.docs.map(doc => ({
