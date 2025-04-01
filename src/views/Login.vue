@@ -4,23 +4,15 @@
     <div class="login-card">
       <h2>Login</h2>
       <p class="subtitle">Access your attendance dashboard</p>
-      
       <form @submit.prevent="handleLogin">
-        <div class="input-group">
-          <input v-model="email" type="email" placeholder="Email" required />
-        </div>
-        <div class="input-group">
-          <input v-model="password" type="password" placeholder="Password" required />
-        </div>
+        <div class="input-group"><input v-model="email" type="email" placeholder="Email" required /></div>
+        <div class="input-group"><input v-model="password" type="password" placeholder="Password" required /></div>
         <button type="submit" class="login-btn" :disabled="loading">
           <span v-if="!loading">Login</span>
           <span v-else class="loading-circle"></span>
         </button>
-        <transition name="fade">
-          <p v-if="error" class="error">{{ error }}</p>
-        </transition>
+        <transition name="fade"><p v-if="error" class="error">{{ error }}</p></transition>
       </form>
-
       <div class="links">
         <router-link to="/reset-password">Forgot Password?</router-link>
         <p>Don't have an account? <router-link to="/signup">Sign Up</router-link></p>
@@ -47,10 +39,7 @@ export default {
       loading.value = true;
       error.value = '';
       try {
-        await store.dispatch('login', {
-          email: email.value,
-          password: password.value
-        });
+        await store.dispatch('login', { email: email.value, password: password.value });
         router.push('/dashboard');
       } catch (err) {
         error.value = err.message || 'Login failed';
@@ -67,10 +56,7 @@ export default {
 <style scoped>
 @import url('https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600&display=swap');
 
-* {
-  font-family: 'Lexend', sans-serif;
-  box-sizing: border-box;
-}
+* { font-family: 'Lexend', sans-serif; box-sizing: border-box; }
 
 .login {
   min-height: 100vh;
@@ -91,22 +77,11 @@ export default {
   text-align: center;
 }
 
-h2 {
-  color: #2c3e50;
-  font-weight: 500;
-  margin: 0 0 0.5rem;
-  font-size: 1.75rem;
-}
+h2 { color: #2c3e50; font-weight: 500; margin: 0 0 0.5rem; font-size: 1.75rem; }
 
-.subtitle {
-  color: #7f8c8d;
-  margin: 0 0 1.5rem;
-  font-size: 1rem;
-}
+.subtitle { color: #7f8c8d; margin: 0 0 1.5rem; font-size: 1rem; }
 
-.input-group {
-  margin-bottom: 1rem;
-}
+.input-group { margin-bottom: 1rem; }
 
 input {
   width: 100%;
@@ -126,44 +101,20 @@ input {
   color: white;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: background 0.3s ease;
   position: relative;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.login-btn:hover:not(:disabled) {
-  background: #2980b9;
-  transform: translateY(-2px);
-}
+.login-btn:hover:not(:disabled), .login-btn:active:not(:disabled) { background: #2980b9; }
+.login-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
-.login-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
+.error { color: #e74c3c; margin: 1rem 0 0; font-size: 0.9rem; }
 
-.error {
-  color: #e74c3c;
-  margin: 1rem 0 0;
-  font-size: 0.9rem;
-}
-
-.links {
-  margin-top: 1.5rem;
-}
-
-.links a {
-  color: #3498db;
-  text-decoration: none;
-  font-weight: 500;
-}
-
-.links a:hover {
-  text-decoration: underline;
-}
-
-.links p {
-  margin: 0.5rem 0 0;
-  color: #7f8c8d;
-}
+.links { margin-top: 1.5rem; }
+.links a { color: #3498db; text-decoration: none; font-weight: 500; }
+.links a:hover { text-decoration: underline; }
+.links p { margin: 0.5rem 0 0; color: #7f8c8d; }
 
 .loading-circle {
   display: inline-block;
@@ -175,41 +126,15 @@ input {
   animation: spin 1s ease-in-out infinite;
 }
 
-/* Animations */
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
+@keyframes spin { to { transform: rotate(360deg); } }
 
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.3s ease;
-}
+.fade-enter-active, .fade-leave-active { transition: opacity 0.3s ease; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
 
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
-
-/* Responsive Design */
 @media (max-width: 480px) {
-  .login-card {
-    padding: 1.5rem;
-  }
-
-  h2 {
-    font-size: 1.5rem;
-  }
-
-  .subtitle {
-    font-size: 0.9rem;
-  }
-
-  input {
-    padding: 0.6rem;
-  }
-
-  .login-btn {
-    padding: 0.6rem;
-  }
+  .login-card { padding: 1.5rem; }
+  h2 { font-size: 1.5rem; }
+  .subtitle { font-size: 0.9rem; }
+  input, .login-btn { padding: 0.6rem; }
 }
 </style>
