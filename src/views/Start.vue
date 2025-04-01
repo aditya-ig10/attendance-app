@@ -14,7 +14,6 @@
         <div class="features" v-if="showFeatures">
           <div class="feature-item"><span class="icon">📅</span><p>Track Daily Attendance</p></div>
           <div class="feature-item"><span class="icon">📊</span><p>Generate Reports</p></div>
-          <div class="feature-item"><span class="icon">👥</span><p>Manage Users (Admin)</p></div>
         </div>
       </transition>
     </div>
