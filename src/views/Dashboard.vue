@@ -1,4 +1,3 @@
-// src/views/Dashboard.vue
 <template>
   <div class="dashboard">
     <header class="dashboard-header">
@@ -49,10 +48,15 @@
           :key="index" 
           :class="['day', getDayClass(day)]"
           @click="isAdmin && toggleHoliday(day)"
+          @mouseover="showHolidayDesc(day)"
+          @mouseleave="holidayTooltip = null"
         >
           <span v-if="day" class="day-number">{{ day.getDate() }}</span>
           <span v-if="isHoliday(day)" class="holiday-marker">H</span>
           <span v-if="hasAttendance(day)" class="present-marker">P</span>
+          <div v-if="holidayTooltip && holidayTooltip.date === day.toDateString()" class="holiday-tooltip">
+            {{ holidayTooltip.description }}
+          </div>
         </div>
       </div>
       <transition name="slide">
@@ -73,7 +77,7 @@
       </div>
     </section>
 
-    <section class="records-section" v-if="attendance.length">
+    <section class="records-section" v-if="sortedAttendance.length">
       <table>
         <thead>
           <tr>
@@ -81,14 +85,48 @@
             <th>In Time</th>
             <th>Out Time</th>
             <th>Working Time</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="record in attendance" :key="record.id">
+          <tr v-for="record in sortedAttendance" :key="record.id">
             <td>{{ formatDate(record.date) }}</td>
-            <td>{{ record.inTime }}</td>
-            <td>{{ record.outTime }}</td>
+            <td>
+              <span v-if="!editingRecord || editingRecord.id !== record.id">{{ record.inTime }}</span>
+              <input v-else v-model="editingRecord.inTime" type="time" />
+            </td>
+            <td>
+              <span v-if="!editingRecord || editingRecord.id !== record.id">{{ record.outTime }}</span>
+              <input v-else v-model="editingRecord.outTime" type="time" />
+            </td>
             <td>{{ calculateWorkingTime(record) }}</td>
+            <td>
+              <button 
+                v-if="!editingRecord || editingRecord.id !== record.id" 
+                @click="startEditing(record)" 
+                :disabled="!isEditable(record)"
+                class="edit-btn"
+              >
+                Edit
+              </button>
+              <button 
+                v-else 
+                @click="saveEdit(record)" 
+                :disabled="loading.edit"
+                class="save-btn"
+              >
+                <span v-if="!loading.edit">Save</span>
+                <span v-else class="loading-circle"></span>
+              </button>
+              <button 
+                @click="deleteRecord(record)" 
+                :disabled="loading.delete || (editingRecord && editingRecord.id === record.id)"
+                class="delete-btn"
+              >
+                <span v-if="!loading.delete">Delete</span>
+                <span v-else class="loading-circle"></span>
+              </button>
+            </td>
           </tr>
         </tbody>
       </table>
@@ -121,7 +159,7 @@ import { useStore } from 'vuex';
 import { useRouter } from 'vue-router';
 import { ref, onMounted, computed, onUnmounted } from 'vue';
 import { auth, db } from '../firebase';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -133,17 +171,24 @@ export default {
     const currentDate = ref(new Date());
     const holidayDesc = ref('');
     const selectedDate = ref(null);
+    const editingRecord = ref(null);
+    const holidayTooltip = ref(null);
     const loading = ref({
       inOut: false,
       logout: false,
       pdf: false,
-      holiday: false
+      holiday: false,
+      edit: false,
+      delete: false
     });
     const elapsedTime = ref('');
     let timerInterval = null;
 
     const user = computed(() => store.state.user);
     const attendance = computed(() => store.state.attendance);
+    const sortedAttendance = computed(() => 
+      [...attendance.value].sort((a, b) => new Date(b.date) - new Date(a.date))
+    );
     const holidays = computed(() => store.state.holidays);
     const currentInTime = computed(() => store.state.currentInTime);
     const allUsers = computed(() => store.state.allUsers);
@@ -236,7 +281,13 @@ export default {
       }
     };
 
-    const formatDate = (date) => new Date(date).toLocaleDateString();
+    const formatDate = (date) => {
+      const d = new Date(date);
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = String(d.getFullYear()).slice(-2);
+      return `${day}/${month}/${year}`;
+    };
 
     const calculateWorkingTime = (record) => {
       if (!record.inTime || !record.outTime) return 'N/A';
@@ -246,6 +297,50 @@ export default {
       const hours = Math.floor(diffMs / (1000 * 60 * 60));
       const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
       return `${hours}h ${minutes}m`;
+    };
+
+    const isEditable = (record) => {
+      const recordDate = new Date(record.date).toDateString();
+      const today = new Date().toDateString();
+      return recordDate === today;
+    };
+
+    const startEditing = (record) => {
+      editingRecord.value = { ...record };
+    };
+
+    const saveEdit = async (record) => {
+      loading.value.edit = true;
+      try {
+        const updatedRecord = {
+          ...record,
+          inTime: editingRecord.value.inTime,
+          outTime: editingRecord.value.outTime
+        };
+        await updateDoc(doc(db, 'attendance', record.id), {
+          inTime: updatedRecord.inTime,
+          outTime: updatedRecord.outTime
+        });
+        await store.dispatch('fetchAttendance');
+        editingRecord.value = null;
+      } catch (err) {
+        error.value = err.message || 'Failed to update record';
+      } finally {
+        loading.value.edit = false;
+      }
+    };
+
+    const deleteRecord = async (record) => {
+      if (!confirm('Are you sure you want to delete this record?')) return;
+      loading.value.delete = true;
+      try {
+        await deleteDoc(doc(db, 'attendance', record.id));
+        await store.dispatch('fetchAttendance');
+      } catch (err) {
+        error.value = err.message || 'Failed to delete record';
+      } finally {
+        loading.value.delete = false;
+      }
     };
 
     const paddedDaysInMonth = computed(() => {
@@ -293,6 +388,19 @@ export default {
 
     const hasAttendance = (day) => 
       day && attendance.value.some(a => new Date(a.date).toDateString() === day.toDateString());
+
+    const showHolidayDesc = (day) => {
+      if (!day) {
+        holidayTooltip.value = null;
+        return;
+      }
+      const holiday = holidays.value.find(h => new Date(h.date).toDateString() === day.toDateString());
+      if (holiday) {
+        holidayTooltip.value = { date: day.toDateString(), description: holiday.description };
+      } else {
+        holidayTooltip.value = null;
+      }
+    };
 
     const toggleHoliday = (day) => {
       if (!day) return;
@@ -356,7 +464,7 @@ export default {
               formatDate(d),
               'Holiday',
               'Holiday',
-              '-'
+              holidayRecord.description || '-'
             ]);
           } else {
             tableData.push([
@@ -370,17 +478,22 @@ export default {
 
         autoTable(doc, {
           startY: 25,
-          head: [['Date', 'In Time', 'Out Time', 'Working Time']],
+          head: [['Date', 'In Time', 'Out Time', 'Description/Working Time']],
           body: tableData,
-          styles: { fontSize: 10 },
-          headStyles: { fillColor: [52, 152, 219] },
-          alternateRowStyles: { fillColor: [245, 245, 245] }
+          styles: { fontSize: 10, halign: 'center' },
+          headStyles: { fillColor: [52, 152, 219], halign: 'center' },
+          alternateRowStyles: { fillColor: [245, 245, 245] },
+          columnStyles: {
+            0: { halign: 'center' },
+            1: { halign: 'center' },
+            2: { halign: 'center' },
+            3: { halign: 'center' }
+          }
         });
 
         doc.save(`attendance_${currentMonthYear.value}.pdf`);
       } catch (err) {
         error.value = err.message || 'Failed to generate PDF';
-        console.error('PDF generation error:', err);
       } finally {
         loading.value.pdf = false;
       }
@@ -411,7 +524,6 @@ export default {
           });
         });
       } catch (err) {
-        console.error('Error during mount:', err);
         error.value = 'Failed to load dashboard';
       }
     });
@@ -425,6 +537,7 @@ export default {
     return {
       user,
       attendance,
+      sortedAttendance,
       holidays,
       error,
       currentInTime,
@@ -448,452 +561,17 @@ export default {
       nextMonth,
       holidayDesc,
       selectedDate,
-      downloadPDF
+      downloadPDF,
+      editingRecord,
+      startEditing,
+      saveEdit,
+      deleteRecord,
+      isEditable,
+      showHolidayDesc,
+      holidayTooltip
     };
   }
 };
 </script>
 
-<style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600&display=swap');
-
-* {
-  font-family: 'Lexend', sans-serif;
-  box-sizing: border-box;
-}
-
-.dashboard {
-  padding: 1rem;
-  max-width: 1200px;
-  margin: 0 auto;
-  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-  min-height: 100vh;
-}
-
-.dashboard-header {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1.5rem;
-  background: rgba(255, 255, 255, 0.9);
-  padding: 1rem;
-  border-radius: 15px;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-}
-
-.user-info {
-  margin-bottom: 1rem;
-}
-
-.user-info h2 {
-  margin: 0;
-  font-weight: 500;
-  color: #2c3e50;
-  font-size: 1.5rem;
-}
-
-.department {
-  margin: 0.5rem 0 0;
-  color: #7f8c8d;
-}
-
-.logout-btn {
-  padding: 0.75rem 1.5rem;
-  background: #e74c3c;
-  border: none;
-  border-radius: 25px;
-  color: white;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  position: relative;
-}
-
-.logout-btn:hover:not(:disabled) {
-  background: #c0392b;
-  transform: translateY(-2px);
-}
-
-.attendance-controls {
-  background: rgba(255, 255, 255, 0.9);
-  padding: 1rem;
-  border-radius: 15px;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-  margin-bottom: 1.5rem;
-  text-align: center;
-}
-
-.action-btn {
-  padding: 1rem 2rem;
-  border: none;
-  border-radius: 25px;
-  color: white;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  width: 100%;
-  max-width: 200px;
-  position: relative;
-}
-
-.in-btn {
-  background: #2ecc71;
-}
-
-.in-btn:hover:not(:disabled) {
-  background: #27ae60;
-}
-
-.action-btn:not(.in-btn) {
-  background: #e74c3c;
-}
-
-.action-btn:not(.in-btn):hover:not(:disabled) {
-  background: #c0392b;
-}
-
-.in-time {
-  margin: 1rem 0 0;
-  color: #2c3e50;
-}
-
-.error {
-  color: #e74c3c;
-  margin: 1rem 0 0;
-}
-
-.calendar-section {
-  background: rgba(255, 255, 255, 0.9);
-  padding: 1rem;
-  border-radius: 15px;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-  margin-bottom: 1.5rem;
-}
-
-h3 {
-  color: #2c3e50;
-  margin-bottom: 1rem;
-  font-size: 1.25rem;
-}
-
-.calendar-controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
-  justify-content: center;
-}
-
-.nav-btn {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  border: none;
-  background: #3498db;
-  color: white;
-  cursor: pointer;
-  transition: all 0.3s ease;
-}
-
-.nav-btn:hover {
-  background: #2980b9;
-}
-
-.month-year {
-  font-weight: 500;
-  color: #2c3e50;
-  margin: 0 0.5rem;
-}
-
-.pdf-btn {
-  padding: 0.5rem 1rem;
-  border-radius: 25px;
-  border: none;
-  background: #9b59b6;
-  color: white;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  position: relative;
-}
-
-.pdf-btn:hover:not(:disabled) {
-  background: #8e44ad;
-}
-
-.calendar {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 0.25rem;
-}
-
-.day-header {
-  text-align: center;
-  padding: 0.5rem;
-  background: #ecf0f1;
-  border-radius: 10px;
-  font-weight: 500;
-  color: #7f8c8d;
-}
-
-.day {
-  padding: 0.75rem;
-  text-align: center;
-  border-radius: 10px;
-  background: white;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  position: relative;
-  min-height: 50px;
-}
-
-.day:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-}
-
-.empty {
-  background: transparent;
-}
-
-.today {
-  background: #f5e6cc; /* Beige */
-}
-
-.weekend {
-  background: #87ceeb; /* Sky Blue */
-}
-
-.present {
-  background: #ffff99; /* Yellow */
-}
-
-.in-only {
-  background: #ffa500; /* Orange */
-}
-
-.holiday {
-  background: #90ee90; /* Green */
-}
-
-.day-number {
-  font-weight: 500;
-}
-
-.holiday-marker, .present-marker {
-  position: absolute;
-  font-size: 0.8rem;
-  color: #7f8c8d;
-}
-
-.holiday-marker {
-  top: 5px;
-  right: 5px;
-}
-
-.present-marker {
-  bottom: 5px;
-  right: 5px;
-}
-
-.holiday-form {
-  margin-top: 1rem;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.holiday-form input {
-  padding: 0.75rem;
-  border: none;
-  border-radius: 10px;
-  flex: 1;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  min-width: 200px;
-}
-
-.holiday-form button {
-  padding: 0.75rem 1.5rem;
-  border: none;
-  border-radius: 10px;
-  background: #3498db;
-  color: white;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  position: relative;
-}
-
-.holiday-form button:hover:not(:disabled) {
-  background: #2980b9;
-}
-
-.color-legend {
-  margin-top: 1rem;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1rem;
-  justify-content: center;
-}
-
-.legend-item {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.color-box {
-  width: 20px;
-  height: 20px;
-  border-radius: 4px;
-}
-
-.sky-blue { background: #87ceeb; }
-.yellow { background: #ffff99; }
-.orange { background: #ffa500; }
-.green { background: #90ee90; }
-.beige { background: #f5e6cc; }
-
-.records-section, .users-section {
-  background: rgba(255, 255, 255, 0.9);
-  padding: 1rem;
-  border-radius: 15px;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-  margin-bottom: 1.5rem;
-}
-
-table {
-  width: 100%;
-  border-collapse: separate;
-  border-spacing: 0 0.5rem;
-}
-
-th {
-  background: #ecf0f1;
-  padding: 0.75rem;
-  color: #2c3e50;
-  font-weight: 500;
-}
-
-td {
-  padding: 0.75rem;
-  background: white;
-  color: #34495e;
-}
-
-tr {
-  transition: all 0.3s ease;
-}
-
-tbody tr:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-}
-
-.loading-circle {
-  display: inline-block;
-  width: 20px;
-  height: 20px;
-  border: 3px solid rgba(255, 255, 255, 0.3);
-  border-radius: 50%;
-  border-top-color: white;
-  animation: spin 1s ease-in-out infinite;
-}
-
-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-/* Animations */
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.3s ease;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
-
-.slide-enter-active,
-.slide-leave-active {
-  transition: all 0.3s ease;
-}
-
-.slide-enter-from,
-.slide-leave-to {
-  opacity: 0;
-  transform: translateY(-10px);
-}
-
-/* Responsive Design */
-@media (max-width: 768px) {
-  .dashboard {
-    padding: 0.5rem;
-  }
-
-  .dashboard-header {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .user-info h2 {
-    font-size: 1.25rem;
-  }
-
-  .action-btn {
-    padding: 0.75rem 1.5rem;
-  }
-
-  .calendar {
-    grid-template-columns: repeat(7, 1fr);
-    gap: 0.1rem;
-  }
-
-  .day {
-    padding: 0.5rem;
-    min-height: 40px;
-  }
-
-  .day-number {
-    font-size: 0.9rem;
-  }
-
-  th, td {
-    padding: 0.5rem;
-    font-size: 0.9rem;
-  }
-}
-
-@media (max-width: 480px) {
-  .calendar {
-    grid-template-columns: repeat(7, 1fr);
-  }
-
-  .day {
-    padding: 0.3rem;
-    min-height: 35px;
-  }
-
-  .day-number {
-    font-size: 0.8rem;
-  }
-
-  .holiday-marker, .present-marker {
-    font-size: 0.6rem;
-  }
-
-  .nav-btn {
-    width: 30px;
-    height: 30px;
-  }
-
-  .pdf-btn {
-    padding: 0.4rem 0.8rem;
-  }
-}
-</style>
+<style src="./DashboardStyles.css"></style>
