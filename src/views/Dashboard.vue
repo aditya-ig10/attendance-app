@@ -55,7 +55,7 @@
           <span v-if="day" class="day-number">{{ day.getDate() }}</span>
           <span v-if="isHoliday(day)" class="holiday-marker">H</span>
           <span v-if="hasAttendance(day)" class="present-marker">P</span>
-          <div v-if="holidayTooltip && holidayTooltip.date === day.toDateString()" class="holiday-tooltip">
+          <div v-if="holidayTooltip && holidayTooltip.date === (day?.toDateString() || '')" class="holiday-tooltip">
             {{ holidayTooltip.description }}
           </div>
         </div>
@@ -392,11 +392,15 @@ export default {
       return classes;
     };
 
-    const isHoliday = (day) => 
-      day && holidays.value.some(h => new Date(h.date).toDateString() === day.toDateString());
+    const isHoliday = (day) => {
+      if (!day) return false;
+      return holidays.value.some(h => new Date(h.date).toDateString() === day.toDateString());
+    };
 
-    const hasAttendance = (day) => 
-      day && attendance.value.some(a => new Date(a.date).toDateString() === day.toDateString());
+    const hasAttendance = (day) => {
+      if (!day) return false;
+      return attendance.value.some(a => new Date(a.date).toDateString() === day.toDateString());
+    };
 
     const showHolidayDesc = (day) => {
       if (!day) {
