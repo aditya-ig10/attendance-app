@@ -1,3 +1,4 @@
+<!-- Dashboard.vue -->
 <template>
   <div class="dashboard">
     <header class="dashboard-header">
@@ -15,7 +16,7 @@
       <button 
         :class="['action-btn', { 'in-btn': !currentInTime }]" 
         @click="currentInTime ? recordOutTime() : recordInTime()"
-        :disabled="loading.inOut"
+        :disabled="loading.inOut || (hasTodayRecord && !currentInTime)"
       >
         <span v-if="!loading.inOut">{{ currentInTime ? 'Out' : 'In' }}</span>
         <span v-else class="loading-circle"></span>
@@ -85,7 +86,7 @@
             <th>In Time</th>
             <th>Out Time</th>
             <th>Working Time</th>
-            <th>Actions</th>
+            <th class="mobile-hidden">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -100,14 +101,15 @@
               <input v-else v-model="editingRecord.outTime" type="time" />
             </td>
             <td>{{ calculateWorkingTime(record) }}</td>
-            <td>
+            <td class="action-cell">
               <button 
                 v-if="!editingRecord || editingRecord.id !== record.id" 
                 @click="startEditing(record)" 
                 :disabled="!isEditable(record)"
                 class="edit-btn"
               >
-                Edit
+                <span class="mobile-hidden">Edit</span>
+                <span class="mobile-only">✏️</span>
               </button>
               <button 
                 v-else 
@@ -123,8 +125,8 @@
                 :disabled="loading.delete || (editingRecord && editingRecord.id === record.id)"
                 class="delete-btn"
               >
-                <span v-if="!loading.delete">Delete</span>
-                <span v-else class="loading-circle"></span>
+                <span class="mobile-hidden">Delete</span>
+                <span class="mobile-only">🗑️</span>
               </button>
             </td>
           </tr>
@@ -157,7 +159,7 @@
 <script>
 import { useStore } from 'vuex';
 import { useRouter } from 'vue-router';
-import { ref, onMounted, computed, onUnmounted } from 'vue';
+import { ref, onMounted, computed, onUnmounted, onActivated } from 'vue';
 import { auth, db } from '../firebase';
 import { doc, setDoc, getDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 import jsPDF from 'jspdf';
@@ -193,6 +195,11 @@ export default {
     const currentInTime = computed(() => store.state.currentInTime);
     const allUsers = computed(() => store.state.allUsers);
     const isAdmin = computed(() => store.state.user?.email === 'admin@atul.fun');
+    const hasTodayRecord = computed(() => 
+      attendance.value.some(record => 
+        new Date(record.date).toDateString() === new Date().toDateString()
+      )
+    );
 
     const updateElapsedTime = async () => {
       if (currentInTime.value && user.value?.uid) {
@@ -211,6 +218,10 @@ export default {
     };
 
     const recordInTime = async () => {
+      if (hasTodayRecord.value) {
+        error.value = 'You have already recorded attendance for today';
+        return;
+      }
       loading.value.inOut = true;
       try {
         const time = new Date().toLocaleTimeString();
@@ -253,9 +264,7 @@ export default {
     };
 
     const autoRecordOutTime = async () => {
-      if (currentInTime.value && !attendance.value.some(record => 
-        new Date(record.date).toDateString() === new Date().toDateString() && record.outTime
-      )) {
+      if (currentInTime.value && !hasTodayRecord.value) {
         await recordOutTime();
       }
     };
@@ -499,6 +508,18 @@ export default {
       }
     };
 
+    const refreshData = async () => {
+      try {
+        await Promise.all([
+          store.dispatch('fetchAttendance'),
+          store.dispatch('fetchHolidays'),
+          isAdmin.value && store.dispatch('fetchAllUsers')
+        ].filter(Boolean));
+      } catch (err) {
+        error.value = 'Failed to refresh data';
+      }
+    };
+
     onMounted(async () => {
       try {
         await new Promise((resolve) => {
@@ -511,11 +532,7 @@ export default {
                   timerInterval = setInterval(updateElapsedTime, 1000);
                 }
               }
-              await Promise.all([
-                store.dispatch('fetchAttendance'),
-                store.dispatch('fetchHolidays'),
-                firebaseUser.email === 'admin@atul.fun' && store.dispatch('fetchAllUsers')
-              ].filter(Boolean));
+              await refreshData();
               setInterval(checkAutoOutTime, 60000);
             } else {
               router.push('/login');
@@ -526,6 +543,10 @@ export default {
       } catch (err) {
         error.value = 'Failed to load dashboard';
       }
+    });
+
+    onActivated(() => {
+      refreshData(); // Refresh data when component is reactivated
     });
 
     onUnmounted(() => {
@@ -568,10 +589,10 @@ export default {
       deleteRecord,
       isEditable,
       showHolidayDesc,
-      holidayTooltip
+      holidayTooltip,
+      hasTodayRecord
     };
   }
 };
 </script>
-
 <style src="./DashboardStyles.css"></style>
